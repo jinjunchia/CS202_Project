@@ -1,21 +1,21 @@
 import itertools
 import numpy as np
 
-# Started with knapsack, then added 2-opt optimization, then added route swapping
+# Read input from file
+with open("1.in", "r") as file:
+    lines = file.readlines()
 
-# Example Input (Replace with actual data)
-N = 6  # Number of locations (Depot + Customers)
-Q = 15  # Vehicle capacity
-distance_matrix = [
-    [0, 10, 15, 20, 25, 30],  # Depot to others
-    [10, 0, 35, 25, 30, 15],  # Customer 1
-    [15, 35, 0, 30, 20, 10],  # Customer 2
-    [20, 25, 30, 0, 15, 10],  # Customer 3
-    [25, 30, 20, 15, 0, 35],  # Customer 4
-    [30, 15, 10, 10, 35, 0],  # Customer 5
-]
-demand = [0, 5, 7, 3, 4, 6]  # Depot has 0 demand
+# Extract number of locations (N) and vehicle capacity (Q)
+N = int(lines[0].strip())  # First line contains N (Number of locations)
+Q = int(lines[1].strip())  # Second line contains Q (Vehicle capacity)
 
+# Extract distance matrix
+distance_matrix = []
+for i in range(2, 2 + N):  # Next N lines contain the distance matrix
+    distance_matrix.append(list(map(int, lines[i].split())))
+
+# Extract demand list (last line)
+demand = list(map(int, lines[2 + N].split()))
 # Define the DP Table
 dp = np.full((N, Q + 1), float('inf'))  # DP[i][q] = min cost to serve first i customers with q capacity left
 dp[0][:] = 0  # Starting at depot, cost is 0
@@ -121,6 +121,5 @@ final_routes = swap_between_routes(optimized_routes, distance_matrix, demand, Q)
 # Print final improved routes
 for route in final_routes:
     print("Final Optimized Route:", " → ".join(map(str, route)))
-
 
 
