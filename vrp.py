@@ -7,7 +7,7 @@ To use this file with example testcases, run:
 python vrp.py < 1.in > 1.out
 
 This reads input from 1.in and prints output to 1.out. 
-"""
+""" 
 
 def read_input():
     """Reads input from stdin and returns number of locations, vehicle capacity, distance matrix, and demand vector."""
