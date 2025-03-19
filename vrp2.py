@@ -1,7 +1,5 @@
 import random
-import numpy as np
 
-# Load input data
 def load_cvrp_data(filename):
     with open(filename, 'r') as f:
         lines = f.readlines()
@@ -10,24 +8,21 @@ def load_cvrp_data(filename):
     Q = int(lines[1].strip())  # Vehicle capacity
     
     # Distance matrix
-    D = []
-    for i in range(2, 2 + n):
-        D.append(list(map(int, lines[i].strip().split())))
+    D = [list(map(int, lines[i].strip().split())) for i in range(2, 2 + n)]
     
     # Demand vector
     q = list(map(int, lines[2 + n].strip().split()))
     
-    return n, Q, np.array(D), q
+    return n, Q, D, q
 
-# Generate initial population using Nearest Neighbor Heuristic
 def nearest_neighbor_solution(n, Q, D, q):
-    unvisited = set(range(1, n))
+    unvisited = set(range(1, n))  # Exclude the depot (node 0)
     routes = []
     
     while unvisited:
         route = [0]  # Start from depot
         load = 0
-        
+
         while unvisited:
             last = route[-1]
             next_node = min(unvisited, key=lambda x: D[last][x])
@@ -38,68 +33,74 @@ def nearest_neighbor_solution(n, Q, D, q):
                 unvisited.remove(next_node)
             else:
                 break
-        
+
         route.append(0)  # Return to depot
         routes.append(route)
     
     return routes
 
-# Compute total distance
 def total_distance(routes, D):
     return sum(D[route[i]][route[i+1]] for route in routes for i in range(len(route)-1))
 
-# 2-Opt Local Search
 def two_opt(route, D):
-    best_route = route
-    best_distance = sum(D[route[i]][route[i+1]] for i in range(len(route)-1))
-    
-    for i in range(1, len(route)-2):
-        for j in range(i+1, len(route)-1):
-            new_route = route[:i] + route[i:j+1][::-1] + route[j+1:]
-            new_distance = sum(D[new_route[k]][new_route[k+1]] for k in range(len(new_route)-1))
-            
-            if new_distance < best_distance:
-                best_route, best_distance = new_route, new_distance
+    best_route = route[:]
+    best_distance = total_distance([route], D)
+    improved = True
+    max_iter = 100  # Prevent infinite loops
+    iteration = 0
+
+    while improved and iteration < max_iter:
+        improved = False
+        for i in range(1, len(route)-2):
+            for j in range(i+1, len(route)-1):
+                new_route = route[:i] + route[i:j+1][::-1] + route[j+1:]
+                new_distance = total_distance([new_route], D)
+
+                if new_distance < best_distance:
+                    best_route, best_distance = new_route, new_distance
+                    improved = True
+        iteration += 1
     
     return best_route
 
-# Genetic Algorithm
-def genetic_algorithm(n, Q, D, q, pop_size=50, generations=100, mutation_rate=0.2):
+def genetic_algorithm(n, Q, D, q, pop_size=50, generations=100, mutation_rate=0.1):
     population = [nearest_neighbor_solution(n, Q, D, q) for _ in range(pop_size)]
-    
+
     for _ in range(generations):
-        population.sort(key=lambda x: total_distance(x, D))
-        new_population = population[:pop_size//2]  # Select top half
+        population.sort(key=lambda x: total_distance(x, D))  # Sort by distance (lower is better)
+        elite_size = max(1, pop_size // 4)
+        new_population = population[:elite_size]
         
-        # Crossover
         while len(new_population) < pop_size:
-            parent1, parent2 = random.sample(population[:10], 2)
-            split = random.randint(1, len(parent1)-2)
-            child = parent1[:split] + parent2[split:]
-            
+            parent1, parent2 = random.sample(population[:elite_size], 2)
+            child = []
+            for r1, r2 in zip(parent1, parent2):
+                if len(r1) > 3:  # Ensure valid crossover range
+                    crossover_point = random.randint(1, max(1, len(r1) - 2))
+                    child_part = r1[:crossover_point] + [x for x in r2 if x not in r1[:crossover_point]]
+                    child.append(child_part)
+                else:
+                    child.append(r1)  # If too short, keep the parent as-is
             new_population.append(child)
-        
-        # Mutation (Swap two cities within a route)
+
         for i in range(len(new_population)):
             if random.random() < mutation_rate:
-                route = random.choice(new_population)
-                if len(route) > 3:
-                    i, j = random.sample(range(1, len(route)-1), 2)
-                    route[i], route[j] = route[j], route[i]
+                for j in range(len(new_population[i])):
+                    route = new_population[i][j]
+                    if len(route) > 4:
+                        idx1, idx2 = sorted(random.sample(range(1, len(route) - 1), 2))
+                        route[idx1], route[idx2] = route[idx2], route[idx1]
         
-        # Apply 2-Opt for refinement
         for i in range(len(new_population)):
-            for j in range(len(new_population[i])):
-                new_population[i][j] = two_opt(new_population[i][j], D)
+            new_population[i] = [two_opt(route, D) for route in new_population[i]]
         
         population = new_population
     
     best_solution = min(population, key=lambda x: total_distance(x, D))
     return best_solution
 
-# Main function
 def main():
-    filename = "1.in"
+    filename = "3.in"
     n, Q, D, q = load_cvrp_data(filename)
     best_routes = genetic_algorithm(n, Q, D, q)
     
