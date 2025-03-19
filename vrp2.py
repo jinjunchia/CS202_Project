@@ -1,110 +1,93 @@
+import sys
 import random
 
 def load_cvrp_data(filename):
     with open(filename, 'r') as f:
-        lines = f.readlines()
-    
-    n = int(lines[0].strip())  # Number of locations
-    Q = int(lines[1].strip())  # Vehicle capacity
-    
-    # Distance matrix
-    D = [list(map(int, lines[i].strip().split())) for i in range(2, 2 + n)]
-    
-    # Demand vector
-    q = list(map(int, lines[2 + n].strip().split()))
+        n = int(f.readline().strip())  # Number of locations
+        Q = int(f.readline().strip())  # Vehicle capacity
+        
+        D = [list(map(int, f.readline().strip().split())) for _ in range(n)]
+        q = list(map(int, f.readline().strip().split()))
     
     return n, Q, D, q
 
-def nearest_neighbor_solution(n, Q, D, q):
-    unvisited = set(range(1, n))  # Exclude the depot (node 0)
-    routes = []
-    
-    while unvisited:
-        route = [0]  # Start from depot
-        load = 0
+def compute_savings(n, D):
+    savings = []
+    for i in range(1, n):
+        for j in range(i + 1, n):
+            savings.append((i, j, D[0][i] + D[0][j] - D[i][j]))
+    savings.sort(key=lambda x: x[2], reverse=True)
+    return savings
 
-        while unvisited:
-            last = route[-1]
-            next_node = min(unvisited, key=lambda x: D[last][x])
+def clarke_wright_savings(n, Q, D, q):
+    savings = compute_savings(n, D)
+    routes = {i: [0, i, 0] for i in range(1, n)}  # Each node starts as its own route
+    route_loads = {i: q[i] for i in range(1, n)}
+    
+    for i, j, _ in savings:
+        if i in routes and j in routes and routes[i] != routes[j]:
+            route_i, route_j = routes[i], routes[j]
             
-            if load + q[next_node] <= Q:
-                route.append(next_node)
-                load += q[next_node]
-                unvisited.remove(next_node)
+            # Ensure capacity constraint is met
+            total_load = sum(q[node] for node in route_i[1:-1]) + sum(q[node] for node in route_j[1:-1])
+            if total_load > Q:
+                continue  # Do not merge if it exceeds capacity
+                
+            if route_i[-2] == i and route_j[1] == j:
+                new_route = route_i[:-1] + route_j[1:]
+            elif route_j[-2] == j and route_i[1] == i:
+                new_route = route_j[:-1] + route_i[1:]
             else:
-                break
-
-        route.append(0)  # Return to depot
-        routes.append(route)
+                continue
+            
+            for node in new_route[1:-1]:
+                routes[node] = new_route
+            
+    # Split routes correctly if they exceed vehicle capacity
+    final_routes = []
+    for route in set(tuple(r) for r in routes.values()):
+        split_route = [0]
+        load = 0
+        for node in route[1:-1]:
+            if load + q[node] > Q:
+                split_route.append(0)
+                final_routes.append(split_route)
+                split_route = [0]
+                load = 0
+            split_route.append(node)
+            load += q[node]
+        split_route.append(0)
+        final_routes.append(split_route)
     
-    return routes
-
-def total_distance(routes, D):
-    return sum(D[route[i]][route[i+1]] for route in routes for i in range(len(route)-1))
+    return final_routes
 
 def two_opt(route, D):
-    best_route = route[:]
-    best_distance = total_distance([route], D)
+    best_distance = sum(D[route[i]][route[i+1]] for i in range(len(route)-1))
     improved = True
-    max_iter = 100  # Prevent infinite loops
-    iteration = 0
-
-    while improved and iteration < max_iter:
+    
+    while improved:
         improved = False
-        for i in range(1, len(route)-2):
-            for j in range(i+1, len(route)-1):
+        for i in range(1, len(route) - 2):
+            for j in range(i + 2, len(route) - 1):
                 new_route = route[:i] + route[i:j+1][::-1] + route[j+1:]
-                new_distance = total_distance([new_route], D)
-
+                new_distance = sum(D[new_route[k]][new_route[k+1]] for k in range(len(new_route)-1))
                 if new_distance < best_distance:
-                    best_route, best_distance = new_route, new_distance
+                    route[i:j+1] = reversed(route[i:j+1])
+                    best_distance = new_distance
                     improved = True
-        iteration += 1
     
-    return best_route
+    return route
 
-def genetic_algorithm(n, Q, D, q, pop_size=50, generations=100, mutation_rate=0.1):
-    population = [nearest_neighbor_solution(n, Q, D, q) for _ in range(pop_size)]
-
-    for _ in range(generations):
-        population.sort(key=lambda x: total_distance(x, D))  # Sort by distance (lower is better)
-        elite_size = max(1, pop_size // 4)
-        new_population = population[:elite_size]
-        
-        while len(new_population) < pop_size:
-            parent1, parent2 = random.sample(population[:elite_size], 2)
-            child = []
-            for r1, r2 in zip(parent1, parent2):
-                if len(r1) > 3:  # Ensure valid crossover range
-                    crossover_point = random.randint(1, max(1, len(r1) - 2))
-                    child_part = r1[:crossover_point] + [x for x in r2 if x not in r1[:crossover_point]]
-                    child.append(child_part)
-                else:
-                    child.append(r1)  # If too short, keep the parent as-is
-            new_population.append(child)
-
-        for i in range(len(new_population)):
-            if random.random() < mutation_rate:
-                for j in range(len(new_population[i])):
-                    route = new_population[i][j]
-                    if len(route) > 4:
-                        idx1, idx2 = sorted(random.sample(range(1, len(route) - 1), 2))
-                        route[idx1], route[idx2] = route[idx2], route[idx1]
-        
-        for i in range(len(new_population)):
-            new_population[i] = [two_opt(route, D) for route in new_population[i]]
-        
-        population = new_population
-    
-    best_solution = min(population, key=lambda x: total_distance(x, D))
-    return best_solution
+def optimize_routes(routes, D):
+    return [two_opt(route, D) for route in routes]
 
 def main():
-    filename = "3.in"
+    filename = "6.in"
     n, Q, D, q = load_cvrp_data(filename)
-    best_routes = genetic_algorithm(n, Q, D, q)
+    initial_routes = clarke_wright_savings(n, Q, D, q)
+    optimized_routes = optimize_routes(initial_routes, D)
     
-    for route in best_routes:
+    for route in optimized_routes:
         print(" ".join(map(str, route)))
 
 if __name__ == "__main__":
